@@ -31,8 +31,6 @@ bool allDpisOK(const T& container) {
 void ProjectCreationContext::projectFilesSubmitted() {
   m_files = m_projectFilesDialog->inProjectFiles();
   m_outDir = m_projectFilesDialog->outputDirectory();
-  m_pdfDpi = m_projectFilesDialog->importedPdfDpi();
-  m_pdfIsBilevel = m_projectFilesDialog->importedPdfIsBilevel();
   m_layoutDirection = Qt::LeftToRight;
   if (m_projectFilesDialog->isRtlLayout()) {
     m_layoutDirection = Qt::RightToLeft;

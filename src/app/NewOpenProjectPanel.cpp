@@ -17,6 +17,10 @@ NewOpenProjectPanel::NewOpenProjectPanel(QWidget* parent) : QWidget(parent) {
 
   newProjectLabel->setText(Utils::richTextForLink(newProjectLabel->text()));
   openProjectLabel->setText(Utils::richTextForLink(openProjectLabel->text()));
+  importPdfLabel->setText(Utils::richTextForLink(importPdfLabel->text()));
+#ifndef HAVE_PDF_IMPORT
+  importPdfLabel->setVisible(false);
+#endif
 
   RecentProjects rp;
   rp.read();
@@ -33,6 +37,7 @@ NewOpenProjectPanel::NewOpenProjectPanel(QWidget* parent) : QWidget(parent) {
 
   connect(newProjectLabel, SIGNAL(linkActivated(const QString&)), this, SIGNAL(newProject()));
   connect(openProjectLabel, SIGNAL(linkActivated(const QString&)), this, SIGNAL(openProject()));
+  connect(importPdfLabel, SIGNAL(linkActivated(const QString&)), this, SIGNAL(importPdf()));
 }
 
 void NewOpenProjectPanel::addRecentProject(const QString& filePath) {

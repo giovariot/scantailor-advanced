@@ -30,12 +30,6 @@ class ProjectFilesDialog : public QDialog, private Ui::ProjectFilesDialog {
 
   bool isDpiFixingForced() const;
 
-  /** Resolution of the imported PDF pages (0 if no PDF was imported). */
-  int importedPdfDpi() const { return m_importedPdfDpi; }
-
-  /** True if every page of the imported PDFs is a 1-bit image. */
-  bool importedPdfIsBilevel() const { return m_importedPdfBilevel; }
-
  private slots:
 
   static QString sanitizePath(const QString& path);
@@ -62,9 +56,6 @@ class ProjectFilesDialog : public QDialog, private Ui::ProjectFilesDialog {
 
   void setInputDir(const QString& dir, bool autoAddFiles = true);
 
-  /** Replaces the PDF files among the items with the page images extracted from them. */
-  void importPdfs(std::vector<Item>& items);
-
   void setOutputDir(const QString& dir);
 
   void startLoadingMetadata();
@@ -83,8 +74,6 @@ class ProjectFilesDialog : public QDialog, private Ui::ProjectFilesDialog {
   int m_loadTimerId;
   bool m_metadataLoadFailed;
   bool m_autoOutDir;
-  int m_importedPdfDpi = 0;
-  bool m_importedPdfBilevel = false;
 };
 
 

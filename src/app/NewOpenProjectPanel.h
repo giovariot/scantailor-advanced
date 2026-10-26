@@ -22,6 +22,8 @@ class NewOpenProjectPanel : public QWidget, private Ui::NewOpenProjectPanel {
 
   void openProject();
 
+  void importPdf();
+
   void openRecentProject(const QString& projectFile);
 
  protected:

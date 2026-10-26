@@ -49,6 +49,10 @@
 #include "ProcessingTaskQueue.h"
 #include "ProjectCreationContext.h"
 #include "PdfExporter.h"
+#ifdef HAVE_PDF_IMPORT
+#include "PdfImporter.h"
+#endif
+#include "ImageMetadataLoader.h"
 #include "DefaultParams.h"
 #include "DefaultParamsProvider.h"
 #include "ProjectOpeningContext.h"
@@ -330,6 +334,10 @@ MainWindow::MainWindow()
   connect(actionSaveProject, SIGNAL(triggered(bool)), this, SLOT(saveProjectTriggered()));
   connect(actionSaveProjectAs, SIGNAL(triggered(bool)), this, SLOT(saveProjectAsTriggered()));
   connect(actionExportPdf, SIGNAL(triggered(bool)), this, SLOT(exportPdfTriggered()));
+  connect(actionImportPdf, SIGNAL(triggered(bool)), this, SLOT(importPdfTriggered()));
+#ifndef HAVE_PDF_IMPORT
+  actionImportPdf->setVisible(false);
+#endif
   connect(actionCloseProject, SIGNAL(triggered(bool)), this, SLOT(closeProject()));
   connect(actionQuit, SIGNAL(triggered(bool)), this, SLOT(close()));
 
@@ -461,6 +469,7 @@ void MainWindow::showNewOpenProjectPanel() {
   // Qt doesn't like.
   connect(nop, SIGNAL(newProject()), this, SLOT(newProject()), Qt::QueuedConnection);
   connect(nop, SIGNAL(openProject()), this, SLOT(openProject()), Qt::QueuedConnection);
+  connect(nop, SIGNAL(importPdf()), this, SLOT(importPdfTriggered()), Qt::QueuedConnection);
   connect(nop, SIGNAL(openRecentProject(const QString&)), this, SLOT(openProject(const QString&)),
           Qt::QueuedConnection);
 
@@ -1466,20 +1475,6 @@ void MainWindow::newProject() {
 }
 
 void MainWindow::newProjectCreated(ProjectCreationContext* context) {
-  if (context->pdfDpi() > 0) {
-    // Pages come from a PDF: make the output match it (same resolution, and 1-bit if the scans were 1-bit).
-    auto& provider = DefaultParamsProvider::getInstance();
-    auto defaults = std::make_unique<DefaultParams>(provider.getParams());
-    DefaultParams::OutputParams out = defaults->getOutputParams();
-    out.setDpi(Dpi(context->pdfDpi(), context->pdfDpi()));
-    if (context->pdfIsBilevel()) {
-      output::ColorParams colorParams = out.getColorParams();
-      colorParams.setColorMode(output::BLACK_AND_WHITE);
-      out.setColorParams(colorParams);
-    }
-    defaults->setOutputParams(out);
-    provider.setParams(std::move(defaults), provider.getProfileName());
-  }
   auto pages = std::make_shared<ProjectPages>(context->files(), ProjectPages::AUTO_PAGES, context->layoutDirection());
   switchToNewProject(pages, context->outDir());
 }
@@ -1545,6 +1540,82 @@ void MainWindow::exportPdfTriggered() {
   if (!error.isEmpty() && error != tr("Canceled.")) {
     QMessageBox::warning(this, tr("Export as PDF"), error);
   }
+}
+
+void MainWindow::importPdfTriggered() {
+#ifdef HAVE_PDF_IMPORT
+  if (!closeProjectInteractive()) {
+    return;
+  }
+
+  QSettings settings;
+  const QString startDir = settings.value("lastPdfImportDir", QDir::homePath()).toString();
+  const QString pdfPath = QFileDialog::getOpenFileName(this, tr("Import PDF"), startDir, tr("PDF documents (*.pdf)"));
+  if (pdfPath.isEmpty()) {
+    return;
+  }
+  const QFileInfo pdf(pdfPath);
+  settings.setValue("lastPdfImportDir", pdf.absolutePath());
+
+  // Pages go to a new folder next to the PDF; an existing folder is never reused or emptied.
+  const QString baseDir = pdf.absoluteDir().filePath(pdf.completeBaseName() + "_pages");
+  QString pagesDir = baseDir;
+  for (int n = 2; QFileInfo::exists(pagesDir); ++n) {
+    pagesDir = QString("%1_%2").arg(baseDir).arg(n);
+  }
+
+  QProgressDialog progress(tr("Importing %1...").arg(pdf.fileName()), tr("Cancel"), 0, 100, this);
+  progress.setWindowModality(Qt::WindowModal);
+  progress.setMinimumDuration(0);
+  const PdfImporter::Result imported = PdfImporter::import(pdf.absoluteFilePath(), pagesDir, "page_", [&](int done, int total) {
+    progress.setMaximum(total);
+    progress.setValue(done);
+    return !progress.wasCanceled();
+  });
+  progress.close();
+  if (!imported.error.isEmpty()) {
+    if (imported.error != tr("Canceled.")) {
+      QMessageBox::warning(this, tr("Import PDF"), tr("Unable to import %1:\n%2").arg(pdf.fileName(), imported.error));
+    }
+    return;
+  }
+
+  std::vector<ImageFileInfo> files;
+  for (const QString& path : imported.files) {
+    std::vector<ImageMetadata> metadata;
+    const ImageMetadataLoader::Status status
+        = ImageMetadataLoader::load(path, [&](const ImageMetadata& m) { metadata.push_back(m); });
+    if (status != ImageMetadataLoader::LOADED) {
+      QMessageBox::warning(this, tr("Import PDF"), tr("Unable to read the extracted page %1.").arg(path));
+      return;
+    }
+    files.emplace_back(QFileInfo(path), metadata);
+  }
+
+  const QString outDir = QDir(pagesDir).filePath("out");
+  if (!QDir().mkpath(outDir)) {
+    QMessageBox::warning(this, tr("Import PDF"), tr("Unable to create output directory."));
+    return;
+  }
+
+  if (imported.dpi > 0) {
+    // Make the output match the PDF: same resolution, and 1-bit if the scans were 1-bit.
+    auto& provider = DefaultParamsProvider::getInstance();
+    auto defaults = std::make_unique<DefaultParams>(provider.getParams());
+    DefaultParams::OutputParams out = defaults->getOutputParams();
+    out.setDpi(Dpi(imported.dpi, imported.dpi));
+    if (imported.allBilevel) {
+      output::ColorParams colorParams = out.getColorParams();
+      colorParams.setColorMode(output::BLACK_AND_WHITE);
+      out.setColorParams(colorParams);
+    }
+    defaults->setOutputParams(out);
+    provider.setParams(std::move(defaults), provider.getProfileName());
+  }
+
+  auto pages = std::make_shared<ProjectPages>(files, ProjectPages::AUTO_PAGES, Qt::LeftToRight);
+  switchToNewProject(pages, outDir);
+#endif
 }
 
 void MainWindow::openProject() {

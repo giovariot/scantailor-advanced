@@ -32,11 +32,6 @@ class ProjectCreationContext : public QObject {
 
   Qt::LayoutDirection layoutDirection() const { return m_layoutDirection; }
 
-  /** Resolution of the imported PDF pages, or 0 if the project has no PDF. */
-  int pdfDpi() const { return m_pdfDpi; }
-
-  bool pdfIsBilevel() const { return m_pdfIsBilevel; }
-
  signals:
 
   void done(ProjectCreationContext* context);
@@ -56,8 +51,6 @@ class ProjectCreationContext : public QObject {
 
   void showFixDpiDialog();
 
-  int m_pdfDpi = 0;
-  bool m_pdfIsBilevel = false;
   QPointer<ProjectFilesDialog> m_projectFilesDialog;
   QPointer<FixDpiDialog> m_fixDpiDialog;
   QString m_outDir;

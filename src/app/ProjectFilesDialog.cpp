@@ -6,10 +6,6 @@
 #include <core/IconProvider.h>
 
 #include <QFileDialog>
-#include <QProgressDialog>
-#ifdef HAVE_PDF_IMPORT
-#include <PdfImporter.h>
-#endif
 #include <QMessageBox>
 #include <QSettings>
 #include <QSortFilterProxyModel>
@@ -175,9 +171,6 @@ ProjectFilesDialog::ProjectFilesDialog(QWidget* parent)
   m_supportedExtensions.insert("jpeg");
   m_supportedExtensions.insert("tif");
   m_supportedExtensions.insert("tiff");
-#ifdef HAVE_PDF_IMPORT
-  m_supportedExtensions.insert("pdf");
-#endif
 
   setupUi(this);
 
@@ -344,58 +337,8 @@ void ProjectFilesDialog::addToProject() {
 
   m_offProjectFiles->items(selection, [&](const Item& item) { items.push_back(item); });
 
-  importPdfs(items);
-
   m_inProjectFiles->append(items.begin(), items.end());
   m_offProjectFiles->remove(selection);
-}
-
-void ProjectFilesDialog::importPdfs(std::vector<Item>& items) {
-#ifdef HAVE_PDF_IMPORT
-  std::vector<Item> result;
-  std::vector<int> dpis;
-  bool allBilevel = true;
-  for (const Item& item : items) {
-    if (!PdfImporter::isPdf(item.fileInfo().fileName())) {
-      result.push_back(item);
-      continue;
-    }
-
-    // The pages are extracted next to the PDF so they can be moved back and forth like any image.
-    QProgressDialog progress(tr("Importing %1...").arg(item.fileInfo().fileName()), tr("Cancel"), 0, 100, this);
-    progress.setWindowModality(Qt::WindowModal);
-    progress.setMinimumDuration(0);
-    const PdfImporter::Result imported = PdfImporter::import(
-        item.fileInfo().absoluteFilePath(), item.fileInfo().absolutePath(), item.fileInfo().completeBaseName() + "_p",
-        [&](int done, int total) {
-          progress.setMaximum(total);
-          progress.setValue(done);
-          return !progress.wasCanceled();
-        });
-    progress.close();
-
-    if (!imported.error.isEmpty()) {
-      QMessageBox::warning(this, tr("Error"),
-                           tr("Unable to import %1:\n%2").arg(item.fileInfo().fileName(), imported.error));
-      continue;
-    }
-    for (const QString& file : imported.files) {
-      result.emplace_back(QFileInfo(file), Qt::ItemIsSelectable | Qt::ItemIsEnabled);
-    }
-    if (imported.dpi > 0) {
-      dpis.push_back(imported.dpi);
-    }
-    allBilevel = allBilevel && imported.allBilevel;
-  }
-  if (!dpis.empty()) {
-    std::sort(dpis.begin(), dpis.end());
-    m_importedPdfDpi = dpis[dpis.size() / 2];
-    m_importedPdfBilevel = allBilevel;
-  }
-  items = std::move(result);
-#else
-  Q_UNUSED(items);
-#endif
 }
 
 
