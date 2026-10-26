@@ -115,22 +115,29 @@ set(common_sources
     ConnectionManager.cpp ConnectionManager.h
     ZoneEditorBase.cpp ZoneEditorBase.h
     ZoneModeListener.h
-    ContentMask.cpp ContentMask.h)
+    ContentMask.cpp ContentMask.h
+    PdfExporter.cpp PdfExporter.h)
 
 add_library(core STATIC ${common_sources} ${common_ui_files})
+
+if (HAVE_PDF_IMPORT)
+  target_sources(core PRIVATE PdfImporter.cpp PdfImporter.h)
+  target_compile_definitions(core PUBLIC HAVE_PDF_IMPORT)
+  target_link_libraries(core PRIVATE qpdf::libqpdf PkgConfig::POPPLER_CPP)
+endif()
 
 if(Qt6_FOUND)
   target_link_libraries(
     core
     PRIVATE TIFF::TIFF PNG::PNG ZLIB::ZLIB JPEG::JPEG
-    PUBLIC Qt::Core Qt::Gui Qt::Widgets Qt::Xml Qt::Network Qt::OpenGL Qt::Svg Qt::OpenGLWidgets
+    PUBLIC Qt::Core Qt::Gui Qt::Widgets Qt::Xml Qt::OpenGL Qt::Svg Qt::OpenGLWidgets
     imageproc zones
     fix_orientation page_split deskew select_content page_layout output)
 else()
   target_link_libraries(
     core
     PRIVATE TIFF::TIFF PNG::PNG ZLIB::ZLIB JPEG::JPEG
-    PUBLIC Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Xml Qt5::Network Qt5::OpenGL Qt5::Svg
+    PUBLIC Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Xml Qt5::OpenGL Qt5::Svg
     imageproc zones
     fix_orientation page_split deskew select_content page_layout output)
 endif()

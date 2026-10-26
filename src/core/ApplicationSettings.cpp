@@ -6,10 +6,16 @@
 #include <tiff.h>
 
 #include <QLocale>
+#include <QtGlobal>
 #include <QtCore/QSettings>
 
 const bool ApplicationSettings::DEFAULT_OPENGL_STATE = false;
+#ifdef Q_OS_MACOS
+// On macOS the app should look like any other Mac app and follow the system appearance.
+const QString ApplicationSettings::DEFAULT_COLOR_SCHEME = "native";
+#else
 const QString ApplicationSettings::DEFAULT_COLOR_SCHEME = "dark";
+#endif
 const bool ApplicationSettings::DEFAULT_AUTO_SAVE_PROJECT = false;
 const int ApplicationSettings::DEFAULT_TIFF_BW_COMPRESSION = COMPRESSION_CCITTFAX4;
 const int ApplicationSettings::DEFAULT_TIFF_COLOR_COMPRESSION = COMPRESSION_LZW;

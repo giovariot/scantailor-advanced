@@ -12,6 +12,9 @@
 #include <QFileSystemModel>
 #include <QMenu>
 #include <QMessageBox>
+#include <QProgressDialog>
+#include <QSettings>
+#include <QCoreApplication>
 #include <QResource>
 #include <QScrollBar>
 #include <QSortFilterProxyModel>
@@ -45,6 +48,9 @@
 #include "ProcessingIndicationWidget.h"
 #include "ProcessingTaskQueue.h"
 #include "ProjectCreationContext.h"
+#include "PdfExporter.h"
+#include "DefaultParams.h"
+#include "DefaultParamsProvider.h"
 #include "ProjectOpeningContext.h"
 #include "ProjectPages.h"
 #include "ProjectReader.h"
@@ -323,6 +329,7 @@ MainWindow::MainWindow()
   connect(actionOpenProject, SIGNAL(triggered(bool)), this, SLOT(openProject()));
   connect(actionSaveProject, SIGNAL(triggered(bool)), this, SLOT(saveProjectTriggered()));
   connect(actionSaveProjectAs, SIGNAL(triggered(bool)), this, SLOT(saveProjectAsTriggered()));
+  connect(actionExportPdf, SIGNAL(triggered(bool)), this, SLOT(exportPdfTriggered()));
   connect(actionCloseProject, SIGNAL(triggered(bool)), this, SLOT(closeProject()));
   connect(actionQuit, SIGNAL(triggered(bool)), this, SLOT(close()));
 
@@ -1459,8 +1466,85 @@ void MainWindow::newProject() {
 }
 
 void MainWindow::newProjectCreated(ProjectCreationContext* context) {
+  if (context->pdfDpi() > 0) {
+    // Pages come from a PDF: make the output match it (same resolution, and 1-bit if the scans were 1-bit).
+    auto& provider = DefaultParamsProvider::getInstance();
+    auto defaults = std::make_unique<DefaultParams>(provider.getParams());
+    DefaultParams::OutputParams out = defaults->getOutputParams();
+    out.setDpi(Dpi(context->pdfDpi(), context->pdfDpi()));
+    if (context->pdfIsBilevel()) {
+      output::ColorParams colorParams = out.getColorParams();
+      colorParams.setColorMode(output::BLACK_AND_WHITE);
+      out.setColorParams(colorParams);
+    }
+    defaults->setOutputParams(out);
+    provider.setParams(std::move(defaults), provider.getProfileName());
+  }
   auto pages = std::make_shared<ProjectPages>(context->files(), ProjectPages::AUTO_PAGES, context->layoutDirection());
   switchToNewProject(pages, context->outDir());
+}
+
+void MainWindow::exportPdfTriggered() {
+  if (!isProjectLoaded()) {
+    return;
+  }
+
+  QStringList files;
+  int missing = 0;
+  for (const PageInfo& page : m_pages->toPageSequence(PAGE_VIEW)) {
+    const QString path = m_outFileNameGen.filePathFor(page.id());
+    if (QFileInfo::exists(path)) {
+      files << path;
+    } else {
+      ++missing;
+    }
+  }
+  if (files.isEmpty()) {
+    QMessageBox::warning(this, tr("Export as PDF"),
+                         tr("There are no output pages yet.  Run the last stage (Output) on the pages first."));
+    return;
+  }
+  if (missing > 0
+      && QMessageBox::question(this, tr("Export as PDF"),
+                               tr("%1 page(s) have no output yet and will be left out.  Continue?").arg(missing))
+             != QMessageBox::Yes) {
+    return;
+  }
+
+  QString suggested = m_projectFile.isEmpty() ? QStringLiteral("output") : QFileInfo(m_projectFile).completeBaseName();
+  QSettings settings;
+  const QString dir = settings.value("lastPdfExportDir", QFileInfo(m_outFileNameGen.outDir()).absolutePath()).toString();
+  const QString pdfPath = QFileDialog::getSaveFileName(this, tr("Export as PDF"), QDir(dir).filePath(suggested + ".pdf"),
+                                                       tr("PDF documents (*.pdf)"));
+  if (pdfPath.isEmpty()) {
+    return;
+  }
+  settings.setValue("lastPdfExportDir", QFileInfo(pdfPath).absolutePath());
+
+  PdfExporter::Options options;
+  bool ok = false;
+  options.jpegQuality = QInputDialog::getInt(this, tr("Export as PDF"),
+                                             tr("JPEG quality for gray and color pages (0 = lossless).\n"
+                                                "Black and white pages are always stored losslessly."),
+                                             settings.value("pdfJpegQuality", 85).toInt(), 0, 100, 1, &ok);
+  if (!ok) {
+    return;
+  }
+  settings.setValue("pdfJpegQuality", options.jpegQuality);
+
+  QProgressDialog progress(tr("Exporting PDF..."), tr("Cancel"), 0, static_cast<int>(files.size()), this);
+  progress.setWindowModality(Qt::WindowModal);
+  progress.setMinimumDuration(0);
+  const QString error = PdfExporter::write(files, pdfPath, options, [&](int done, int total) {
+    progress.setMaximum(total);
+    progress.setValue(done);
+    QCoreApplication::processEvents();
+    return !progress.wasCanceled();
+  });
+  progress.close();
+  if (!error.isEmpty() && error != tr("Canceled.")) {
+    QMessageBox::warning(this, tr("Export as PDF"), error);
+  }
 }
 
 void MainWindow::openProject() {
@@ -1607,6 +1691,7 @@ void MainWindow::updateProjectActions() {
   const bool loaded = isProjectLoaded();
   actionSaveProject->setEnabled(loaded);
   actionSaveProjectAs->setEnabled(loaded);
+  actionExportPdf->setEnabled(loaded);
   actionFixDpi->setEnabled(loaded);
   actionRelinking->setEnabled(loaded);
   actionReverseTwoPageOrder->setEnabled(loaded);
@@ -2177,6 +2262,11 @@ void MainWindow::updateMaxLogicalThumbSize() {
   m_thumbSequence->setMaxLogicalThumbSize(m_maxLogicalThumbSize);
   updateThumbViewMinWidth();
   resetThumbSequence(currentPageOrderProvider(), ThumbnailSequence::KEEP_SELECTION);
+}
+
+void MainWindow::refreshIcons() {
+  setupIcons();
+  update();
 }
 
 void MainWindow::setupIcons() {

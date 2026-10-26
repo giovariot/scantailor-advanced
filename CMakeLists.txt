@@ -254,6 +254,21 @@ else()
 endif()
 
 
+#=================================== PDF import ===================================#
+# PDF import needs qpdf (extracts the embedded scans) and poppler-cpp (renders pages that
+# cannot be extracted, e.g. JBIG2).  PDF export has no extra dependencies.
+
+set(HAVE_PDF_IMPORT OFF)
+find_package(qpdf CONFIG QUIET)
+find_package(PkgConfig QUIET)
+if (qpdf_FOUND AND PkgConfig_FOUND)
+  pkg_check_modules(POPPLER_CPP QUIET IMPORTED_TARGET poppler-cpp)
+  if (POPPLER_CPP_FOUND)
+    set(HAVE_PDF_IMPORT ON)
+  endif()
+endif()
+message(STATUS "PDF import: ${HAVE_PDF_IMPORT}")
+
 #=================================== Threads ===================================#
 
 if (UNIX)
@@ -289,6 +304,9 @@ endif()
 set(APPLICATION_NAME "${target_name}")
 if (WIN32)
   set(TRANSLATION_DIRS ".:translations")
+  set(PLUGIN_DIRS ".")
+elseif (APPLE)
+  set(TRANSLATION_DIRS ".:translations:../Resources/translations")
   set(PLUGIN_DIRS ".")
 else()
   set(TRANSLATION_DIRS ".:translations:../share/${APPLICATION_NAME}/translations")

@@ -11,6 +11,10 @@
 #include <core/StyledIconPack.h>
 
 #include <QGuiApplication>
+#include <QPointer>
+#include <QStyleHints>
+#include <QTimer>
+#include <QWidget>
 #include <QSettings>
 #include <QStringList>
 
@@ -66,6 +70,25 @@ int main(int argc, char* argv[]) {
   } else {
     // mainWnd->showMaximized();  // Doesn't work for Windows.
     QTimer::singleShot(0, mainWnd, &QMainWindow::showMaximized);
+  }
+
+  if (ApplicationSettings::getInstance().getColorScheme() == "native") {
+    // Follow the system light/dark switch while running: colors and icons are derived from the
+    // palette, so they are rebuilt once Qt has updated it.
+    QPointer<MainWindow> wnd(mainWnd);
+    QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, mainWnd, [wnd]() {
+      QTimer::singleShot(0, [wnd]() {
+        const std::unique_ptr<ColorScheme> scheme = ColorSchemeFactory().create("native");
+        ColorSchemeManager::instance().setColorScheme(*scheme);
+        IconProvider::getInstance().setIconPack(StyledIconPack::createDefault());
+        if (wnd) {
+          wnd->refreshIcons();
+        }
+        for (QWidget* widget : QApplication::allWidgets()) {
+          widget->update();
+        }
+      });
+    });
   }
 
   if (args.size() > 1) {

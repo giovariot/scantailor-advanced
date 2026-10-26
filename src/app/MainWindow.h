@@ -75,6 +75,9 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
 
   std::vector<PageRange> selectedRanges() const;
 
+  /** Call after the system appearance (light/dark) changed and the icon pack was rebuilt. */
+  void refreshIcons();
+
  protected:
   bool eventFilter(QObject* obj, QEvent* ev) override;
 
@@ -165,6 +168,8 @@ class MainWindow : public QMainWindow, private FilterUiInterface, private Ui::Ma
   void saveProjectTriggered();
 
   void saveProjectAsTriggered();
+
+  void exportPdfTriggered();
 
   void newProject();
 
