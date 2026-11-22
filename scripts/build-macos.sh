@@ -74,12 +74,30 @@ rm -rf "$APP/Contents/PlugIns/platforminputcontexts" "$APP/Contents/PlugIns/netw
 rm -rf "$APP"/Contents/Frameworks/QtQml*.framework "$APP"/Contents/Frameworks/QtQuick*.framework \
        "$APP"/Contents/Frameworks/QtNetwork.framework
 
+# Some Homebrew libraries (poppler, webp, brotli) find their siblings through @rpath without an rpath
+# pointing at their own folder; they only ran on machines with Homebrew installed.
+for lib in "$APP"/Contents/Frameworks/*.dylib; do
+  if ! otool -l "$lib" | grep -q "path @loader_path (offset"; then
+    install_name_tool -add_rpath @loader_path "$lib"
+  fi
+done
+
+# Drop the search paths into Homebrew: the app must only ever use the libraries inside it.
+while IFS= read -r -d '' bin; do
+  while IFS= read -r rp; do
+    install_name_tool -delete_rpath "$rp" "$bin"
+  done < <(otool -l "$bin" 2>/dev/null | awk '/cmd LC_RPATH/{r=1} r&&/ path /{print $2; r=0}' | grep -E '^(/opt/homebrew|/usr/local)' || true)
+done < <(find "$APP/Contents" -type f \( -name '*.dylib' -o -path '*/MacOS/*' \) -print0)
+
 # macOS decides window look and SwiftUI/AppKit compatibility from the SDK recorded
 # in LC_BUILD_VERSION, and the linker writes the deployment target there instead.
 # Patch it, then re-sign (rewriting invalidates the signature).
 vtool -set-build-version macos "$DEPLOY" "$SDK_VERSION" -replace \
   -output "$APP/Contents/MacOS/scantailor-advanced" "$APP/Contents/MacOS/scantailor-advanced"
 codesign --force --deep --sign - "$APP"
+
+# The bundle must not depend on anything outside itself (fails the build otherwise).
+python3 -I "$ROOT/scripts/check-bundle.py" "$APP"
 
 hdiutil create -volname "ScanTailor Advanced" -srcfolder "$APP" -ov -format UDZO \
   "$DIST/ScanTailor-Advanced-$VERSION-macOS-$ARCH.dmg"
